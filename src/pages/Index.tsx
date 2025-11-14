@@ -1,49 +1,63 @@
 import { useState, useEffect } from "react";
-import { Search, Building2, Filter, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Building2, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CompanyCard } from "@/components/CompanyCard";
 import { CompanyDetails } from "@/components/CompanyDetails";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AdvancedFilters, FilterValues } from "@/components/AdvancedFilters";
 import { pappersApi } from "@/services/pappersApi";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { SECTEURS_ACTIVITE } from "@/data/filterOptions";
 
 const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedCompany, setSelectedCompany] = useState<any>(null);
-  const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [filters, setFilters] = useState<FilterValues>({
+    statusFilter: "all",
+  });
   const { toast } = useToast();
 
   // Debounce search query
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(searchQuery);
-      setCurrentPage(1); // Reset to first page on new search
+      setCurrentPage(1);
     }, 500);
 
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters]);
+
+  // Build NAF codes from sector filter
+  const getNafCodes = () => {
+    if (!filters.secteur) return undefined;
+    const secteur = SECTEURS_ACTIVITE.find(s => s.value === filters.secteur);
+    return secteur?.codes.join(',');
+  };
+
   // Fetch companies from API
   const { data, isLoading, error } = useQuery({
-    queryKey: ['companies', debouncedQuery, currentPage],
+    queryKey: ['companies', debouncedQuery, currentPage, filters],
     queryFn: async () => {
       return await pappersApi.search({
         q: debouncedQuery || undefined,
         page: currentPage,
         par_page: 20,
+        departement: filters.departement,
+        categorie_juridique: filters.formeJuridique,
+        code_naf: getNafCodes(),
+        entreprise_cessee: filters.entrepriseCessee,
+        entreprise_employeuse: filters.entrepriseEmployeuse,
       });
     },
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 5,
   });
 
   useEffect(() => {
@@ -62,7 +76,7 @@ const Index = () => {
 
   const filteredCompanies = companies.filter((company: any) => {
     const matchesStatus = 
-      statusFilter === "all" || company.statut_consolide === statusFilter;
+      filters.statusFilter === "all" || company.statut_consolide === filters.statusFilter;
     return matchesStatus;
   });
 
@@ -109,17 +123,7 @@ const Index = () => {
                 className="pl-10"
               />
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-[180px]">
-                <Filter className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Statut" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tous les statuts</SelectItem>
-                <SelectItem value="actif">Actif</SelectItem>
-                <SelectItem value="inactif">Inactif</SelectItem>
-              </SelectContent>
-            </Select>
+            <AdvancedFilters filters={filters} onFiltersChange={setFilters} />
           </div>
         </div>
       </header>
@@ -151,7 +155,9 @@ const Index = () => {
               <div className="text-center py-12">
                 <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <p className="text-muted-foreground">
-                  {searchQuery ? 'Aucune entreprise trouvée pour cette recherche' : 'Lancez une recherche pour voir les résultats'}
+                  {searchQuery || Object.keys(filters).some(k => k !== 'statusFilter' && filters[k as keyof FilterValues])
+                    ? 'Aucune entreprise trouvée pour ces critères'
+                    : 'Lancez une recherche pour voir les résultats'}
                 </p>
               </div>
             )}
